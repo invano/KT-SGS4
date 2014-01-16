@@ -74,7 +74,7 @@
 #define LED_IMAX_SHIFT                        6
 #define AN30259A_CTN_RW_FLG                0x80
 
-#define LED_R_CURRENT                0x28
+#define LED_R_CURRENT                0x28	// 40 decimal 
 #define LED_G_CURRENT                0x28
 #define LED_B_CURRENT                0x28
 #define LED_MAX_CURRENT                0xFF
@@ -343,12 +343,12 @@ static void an30259a_start_led_pattern(int mode)
         else
                 LED_DYNAMIC_CURRENT = 0x1;
 
-	if (led_intensity == 0) {
+	if (led_intensity == 0) {	// then use stock values
 		led_r_brightness = LED_R_CURRENT;
 		led_g_brightness = LED_G_CURRENT;
 		led_b_brightness = LED_B_CURRENT;
 	}
-	else {
+	else {	// otherwise brightness adapts to led_intensity
 		led_r_brightness = led_intensity / LED_DYNAMIC_CURRENT;
 		led_g_brightness = led_intensity / LED_DYNAMIC_CURRENT;
 		led_b_brightness = led_intensity / LED_DYNAMIC_CURRENT;
@@ -388,7 +388,7 @@ static void an30259a_start_led_pattern(int mode)
  		leds_on(LED_G, true, false, led_g_brightness);
                 break;
 
-        case POWERING:
+        case POWERING:	// never use LOW_POWER during boot
                 pr_info("LED Powering Pattern on\n");
  		leds_on(LED_G, true, true, LED_G_CURRENT);
  		leds_on(LED_B, true, true, LED_B_CURRENT);
@@ -431,10 +431,10 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
                 LED_DYNAMIC_CURRENT = LED_B_CURRENT;
 
         /* In user case, LED current is restricted */
-        if (led_intensity == 40) {
+        if (led_intensity == 40) {	// if stock intesity is used (see LED_x_CURRENT = 0x28)
         	brightness = (brightness * LED_DYNAMIC_CURRENT) / LED_MAX_CURRENT;
         }
-        else if (led_intensity != 0) {
+        else if (led_intensity != 0) {	// adapt current to led_intensity
         	brightness = (brightness * led_intensity) / LED_MAX_CURRENT;
         }
 
