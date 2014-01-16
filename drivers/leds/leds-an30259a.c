@@ -82,7 +82,7 @@
 
 #define        MAX_NUM_LEDS        3
 
-u8 LED_DYNAMIC_CURRENT = 0x9;
+u8 LED_DYNAMIC_CURRENT = 0x8;
 u8 LED_LOWPOWER_MODE = 0x0;
 
 static struct an30259_led_conf led_conf[] = {
@@ -145,11 +145,13 @@ struct i2c_client *b_client;
 extern struct class *sec_class;
 struct device *led_dev;
 int led_enable_fade;
+int led_intensity_restrict;
 u8 led_intensity;
 
 /*path : /sys/class/sec/led/led_pattern*/
 /*path : /sys/class/sec/led/led_blink*/
 /*path : /sys/class/sec/led/led_intensity*/
+/*path : /sys/class/sec/led/led_intensity_restrict*/
 /*path : /sys/class/sec/led/led_fade*/
 /*path : /sys/class/leds/led_r/brightness*/
 /*path : /sys/class/leds/led_g/brightness*/
@@ -338,21 +340,16 @@ static void an30259a_start_led_pattern(int mode)
                 return;
 
         /* Set to low power consumption mode */
-        if (LED_LOWPOWER_MODE == 1)
-                LED_DYNAMIC_CURRENT = 0x9;
+        if (LED_LOWPOWER_MODE == 1 && led_intensity_restrict == 1)
+                LED_DYNAMIC_CURRENT = 0x8;
         else
                 LED_DYNAMIC_CURRENT = 0x1;
-
-	if (led_intensity == 0) {
-		led_r_brightness = LED_R_CURRENT;
-		led_g_brightness = LED_G_CURRENT;
-		led_b_brightness = LED_B_CURRENT;
-	}
-	else {
-		led_r_brightness = led_intensity / LED_DYNAMIC_CURRENT;
-		led_g_brightness = led_intensity / LED_DYNAMIC_CURRENT;
-		led_b_brightness = led_intensity / LED_DYNAMIC_CURRENT;
-	}
+                
+                
+	led_r_brightness = led_intensity / LED_DYNAMIC_CURRENT;
+	led_g_brightness = led_intensity / LED_DYNAMIC_CURRENT;
+	led_b_brightness = led_intensity / LED_DYNAMIC_CURRENT;
+	
 	
         switch (mode) {
         /* leds_set_slope_mode(client, LED_SEL, DELAY,  MAX, MID, MIN,
@@ -431,12 +428,8 @@ static void an30259a_set_led_blink(enum an30259a_led_enum led,
                 LED_DYNAMIC_CURRENT = LED_B_CURRENT;
 
         /* In user case, LED current is restricted */
-        if (led_intensity == 40) {
-        	brightness = (brightness * LED_DYNAMIC_CURRENT) / LED_MAX_CURRENT;
-        }
-        else if (led_intensity != 0) {
+        if (led_intensity_restrict == 1)
         	brightness = (brightness * led_intensity) / LED_MAX_CURRENT;
-        }
 
         if (delay_on_time > SLPTT_MAX_VALUE)
                 delay_on_time = SLPTT_MAX_VALUE;
@@ -638,11 +631,44 @@ static ssize_t store_an30259a_led_intensity(struct device *dev,
 		return count;
 	}
 
-	if (intensity >= 0 && intensity <= 255) {
+	if (intensity > 0 && intensity <= 255) {
 		led_intensity = (u8)intensity;
 	}
 
 	printk(KERN_DEBUG "led_intensity is called\n");
+
+	return count;
+}
+
+static ssize_t show_an30259a_led_intensity_restrict(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	int ret;
+	 
+	ret = sprintf(buf, "%d\n", led_intensity_restrict);
+	pr_info("[LED] %s: led_intensity_restrict=%d\n", __func__, led_intensity_restrict);
+
+	return ret;
+}
+
+static ssize_t store_an30259a_led_intensity_restrict(struct device *dev,
+				struct device_attribute *devattr,
+				const char *buf, size_t count)
+ {
+	int retval;
+	int intensity_restrict = 0;
+	struct an30259a_data *data = dev_get_drvdata(dev);
+
+	retval = sscanf(buf, "%d", &intensity_restrict);
+
+	if (retval == 0) {
+		dev_err(&data->client->dev, "fail to get led_intensity_restrict value.\n");
+		return count;
+	}
+
+	led_intensity_restrict = intensity_restrict;
+
+	printk(KERN_DEBUG "led_intensity_restrict is called\n");
 
 	return count;
 }
@@ -831,6 +857,8 @@ static DEVICE_ATTR(led_fade, 0664, show_an30259a_led_fade, \
 				store_an30259a_led_fade);
 static DEVICE_ATTR(led_intensity, 0664, show_an30259a_led_intensity, \
 				store_an30259a_led_intensity);
+static DEVICE_ATTR(led_intensity_restrict, 0664, show_an30259a_led_intensity_restrict, \
+				store_an30259a_led_intensity_restrict);
 static DEVICE_ATTR(led_br_lev, 0664, NULL, \
                                         store_an30259a_led_br_lev);
 static DEVICE_ATTR(led_lowpower, 0664, NULL, \
@@ -858,6 +886,7 @@ static struct attribute *sec_led_attributes[] = {
         &dev_attr_led_blink.attr,
         &dev_attr_led_fade.attr,
         &dev_attr_led_intensity.attr,
+        &dev_attr_led_intensity_restrict.attr,
         &dev_attr_led_br_lev.attr,
         &dev_attr_led_lowpower.attr,
         NULL,
@@ -958,6 +987,9 @@ static int __devinit an30259a_probe(struct i2c_client *client,
         }
 
 #ifdef SEC_LED_SPECIFIC
+	led_enable_fade = 1;
+	led_intensity = 40;
+	led_intensity_restrict = 0;
         led_dev = device_create(sec_class, NULL, 0, data, "led");
         if (IS_ERR(led_dev)) {
                 dev_err(&client->dev,
